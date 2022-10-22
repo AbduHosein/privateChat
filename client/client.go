@@ -13,7 +13,7 @@ import (
 type Message struct {
 	To      string
 	From    string
-	Content string
+	Content []string
 }
 
 func main() {
@@ -45,7 +45,11 @@ func main() {
 		fmt.Print(">> ")
 
 		// Raw input from server, unformatted at this point
-		text, _ := reader.ReadString('\n')
+		text, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 
 		// Exit client when the user types STOP.
 		// TODO (STOP GO ROUTINE FROM SERVER): Add another condition here when you recieve STOP from the server.
@@ -57,13 +61,13 @@ func main() {
 		// Here the raw text string is split into a slice, so that I can store the slice values in the message struct.
 		send := strings.Split(text, " ")
 
-		// TODO: the message content in the struct should be a slice that contains all the message contents.
-		//content := send[2:] Experimenting here to pass over the message contents as a string, for messages longer than 1 word.
+		// Store the message content in a slice, so users can now send longer messages.
+		content := send[2:]
 
-		// For now ensure that the message is len 3: To From Content
-		if len(send) == 3 {
+		// ensure there is more than 2 inputs, ie, the client is sending a message.
+		if len(send) > 2 {
 			// Message struct created, and sent to server using encoder.
-			message := &Message{send[0], send[1], send[2]}
+			message := &Message{send[0], send[1], content}
 			encoder.Encode(message)
 		} else {
 			fmt.Println("Invalid arguments")
