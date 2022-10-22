@@ -16,9 +16,10 @@ type Message struct {
 }
 
 func handleConnection(c net.Conn) {
-	fmt.Print(">> ")
+
 	for {
 		//Read data from connection
+		fmt.Print(">> ")
 		dec := gob.NewDecoder(c)
 		//netData, err := bufio.NewReader(c).ReadString('\n')
 		//if err != nil {
@@ -30,12 +31,13 @@ func handleConnection(c net.Conn) {
 		message := &Message{}
 		dec.Decode(message)
 		temp := message.To
-		if temp == "STOP" {
+		if temp == "STOP" || temp == "" {
+			fmt.Print("Client has exited...\n")
 			break
 		}
-		fmt.Println("{To field, From field, content}: ", message.To, message.From, message.Content)
+		fmt.Print("{To field, From field, content}: " + message.To + " " + message.From + " " + message.Content)
 		//counter := strconv.Itoa(count) + "\n"
-		c.Write([]byte("Encoded struct received on server"))
+		//c.Write([]byte("Encoded struct received on serverW"))
 	}
 	c.Close()
 }
@@ -46,7 +48,7 @@ func main() {
 		fmt.Println("Please provide a port number!")
 		return
 	}
-
+	fmt.Println("Server has started...")
 	PORT := ":" + arguments[1]
 	l, err := net.Listen("tcp4", PORT)
 	if err != nil {
@@ -61,7 +63,7 @@ func main() {
 			fmt.Println(err)
 			return
 		}
+		fmt.Println("Server is awaiting a connection...")
 		go handleConnection(c)
-		count++
 	}
 }

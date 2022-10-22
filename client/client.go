@@ -26,16 +26,20 @@ func main() {
 	USERNAME := arguments[2]
 	fmt.Println(CONNECT, USERNAME)
 	c, err := net.Dial("tcp", CONNECT)
-	encoder := gob.NewEncoder(c)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
 	for {
+		encoder := gob.NewEncoder(c)
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print(">> ")
 		text, _ := reader.ReadString('\n')
+		if strings.TrimSpace(string(text)) == "STOP" {
+			fmt.Println("TCP client exiting...")
+			return
+		}
 		// Sending message to the server
 		//fmt.Fprintf(c, text+"\n")
 		send := strings.Split(text, " ")
