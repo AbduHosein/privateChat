@@ -24,9 +24,10 @@ func main() {
 		return
 	}
 	// Store args in local variables
-	// TODO: Potentialy send the username over to server to be a key in our serveside Connections map that will store the various connections.
 	CONNECT := arguments[1]
 	USERNAME := arguments[2]
+
+	// TODO: Potentialy send the username over to server to be a key in our serveside Connections map that will store the various connections.
 
 	// Printed this just to see the args
 	fmt.Println(CONNECT, USERNAME)
@@ -53,7 +54,7 @@ func main() {
 
 		// Exit client when the user types STOP.
 		// TODO (STOP GO ROUTINE FROM SERVER): Add another condition here when you recieve STOP from the server.
-		if strings.TrimSpace(string(text)) == "STOP" {
+		if strings.TrimSpace(string(text)) == "EXIT" {
 			fmt.Println("TCP client exiting...")
 			return
 		}
@@ -61,17 +62,16 @@ func main() {
 		// Here the raw text string is split into a slice, so that I can store the slice values in the message struct.
 		send := strings.Split(text, " ")
 
-		// Store the message content in a slice, so users can now send longer messages.
-		content := send[2:]
-
 		// ensure there is more than 2 inputs, ie, the client is sending a message.
 		if len(send) > 2 {
+			// Store the message content in a slice, so users can now send longer messages.
+			content := send[2:]
+
 			// Message struct created, and sent to server using encoder.
 			message := &Message{send[0], send[1], content}
 			encoder.Encode(message)
 		} else {
-			fmt.Println("Invalid arguments")
+			fmt.Println("Invalid arguments, please input: To From Message")
 		}
-
 	}
 }
