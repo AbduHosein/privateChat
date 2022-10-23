@@ -16,6 +16,26 @@ type Message struct {
 	Content []string
 }
 
+func check(err error) {
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+}
+
+func receiveMessages(c net.Conn) {
+
+	dec := gob.NewDecoder(c)
+
+	for {
+		var m Message
+		err := dec.Decode(&m)
+		check(err)
+
+		fmt.Println(m)
+	}
+}
+
 func main() {
 	// Validate that client is supplying correct args.
 	arguments := os.Args
@@ -39,8 +59,16 @@ func main() {
 		return
 	}
 
+	go receiveMessages(c)
+
 	// Following block of code reads client Stdin, formats it, then sends to the server using Gob.
 	encoder := gob.NewEncoder(c)
+
+	// INIT-MESSAGE
+	content := strings.Split(USERNAME, " ")
+	m := Message{"SERVER", c.LocalAddr().String(), content}
+	encoder.Encode(&m)
+	check(err)
 
 	// NOTE FROM JOHN:
 	// THIS FOR-LOOP WORKS TO READ FROM CLIENT'S COMMAND LINE

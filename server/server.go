@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/gob"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strings"
@@ -13,11 +14,29 @@ import (
 // This way when the server recieves a message Struct, we check to see if its in the map, and handle the error if its not.
 // If it is in the MAP, we could now construct a new Struct of the form Message{From, Content string}, ex--> {"Abdu: ", "Hello"}\
 
+var InfoLogger *log.Logger
+
 // Message struct to receive structs from the clients.
 type Message struct {
 	To      string
 	From    string
 	Content []string
+}
+
+type ClientConnection struct {
+	// Network address of the Client
+	address string
+	// TCP connection between server and client
+	c net.Conn
+	// Encoder which writes to the structs net.Conn
+	enc gob.Encoder
+}
+
+type Router struct {
+	incoming chan Message
+
+	// Maps from a process's username to their ClientConnection address
+	table map[string]ClientConnection
 }
 
 // Global variable used to turn the server off
@@ -44,7 +63,7 @@ func stopChatroom(ch chan string) {
 	}
 }
 
-func receiveMessages(c net.Conn, incoming chan Message) {
+func receiveMessages(c net.Conn, router Router) {
 
 	dec := gob.NewDecoder(c)
 
@@ -55,54 +74,51 @@ func receiveMessages(c net.Conn, incoming chan Message) {
 		dec.Decode(message)
 		temp := message.To
 
-		//
+		// Check for blank message
 		if temp == "" {
 			fmt.Print("Client has exited...\n")
 			c.Close()
 		}
 
-		incoming <- *message
-	}
+		// Check if it is a message from the server
+		if temp == "SERVER" {
 
-}
+			enc := gob.NewEncoder(c)
+			newConn := ClientConnection{c.RemoteAddr().String(), c, *enc}
 
-func sendMessages(c net.Conn, outgoing chan Message) {
+			username := strings.Join(message.Content, "")
+			router.table[username] = newConn
 
-	enc := gob.NewEncoder(c)
+			InfoLogger.Printf("New Client Added to `Router`: %s under the alias %s", c.RemoteAddr().String(), username)
 
-	for {
-		var m = <-outgoing
-
-		// TODO: NOTE FROM JOHN
-		// NEED TO USE MAP TO CHECK IF MESSAGE SHOULD BE SENT TO THIS CLIENT
-		// KEY INTO MAP USING THE USERNAME OF THE MESSAGE AND VERIFY THAT THE CORRESPONDING
-		// PORT VALUE MATCHES THE PORT VALUE OF `c.RemoteAddr()`
-
-		err := enc.Encode(m)
-		if err != nil {
-			fmt.Println(err)
-			return
+			// Skip to next iteration, as this message does not need to be dispatched.
+			continue
 		}
 
+		// Dispatch the message to the proper client
+		router.dispatch(*message)
 	}
+
 }
 
 // TODO: When the ^^ stopChatroom goroutine receives the EXIT signal:
 //   - Need to somehow communicate to all handleConnections go routines via a channel that the chatroom is exitting,
 //   - Send the EXIT signal to the respective client via TCP.
-func handleConnection(c net.Conn, signal chan string, incoming, outgoing chan Message) {
-	// decoder used to recieve messages from the respective client.
-	go receiveMessages(c, incoming)
+func handleConnection(c net.Conn, signal chan string, router Router) {
 
-	go sendMessages(c, outgoing)
+	go receiveMessages(c, router)
+
 }
 
-func router(incoming, outgoing chan Message) {
+func (r Router) dispatch(m Message) {
 
-	for {
-		var m = <-incoming
-		outgoing <- m
-	}
+	// Username value in the Message.To field
+	destinationUsername := m.To
+
+	connection := r.table[destinationUsername]
+
+	connection.enc.Encode(&m)
+
 }
 
 func main() {
@@ -112,6 +128,8 @@ func main() {
 		fmt.Println("Please provide a port number!")
 		return
 	}
+
+	InfoLogger = log.New(os.Stdout, "INFO: ", log.Ltime|log.Lshortfile)
 
 	// Server starts here
 	fmt.Println("Server has started...")
@@ -127,10 +145,11 @@ func main() {
 	// TODO: implement the signal channel and pass to stopChatroom, and somehow use this channel to communication with all handleConnection routines.
 	signal := make(chan string)
 	incoming := make(chan Message, 5)
-	outgoing := make(chan Message, 5)
+
+	routerTable := make(map[string]ClientConnection)
+	router := Router{incoming, routerTable}
 
 	go stopChatroom(signal)
-	go router(incoming, outgoing)
 
 	// This block handles incoming connections while serverstatus is ON.
 	// TODO: Ensure that the program terminates when serverStatus is OFF, ie, make sure all handleConnection routines exit.
@@ -143,7 +162,13 @@ func main() {
 		fmt.Println("Server has connected to a new client...")
 
 		// TODO: make sure that these routines exit when signal feeds the "EXIT" string
-		go handleConnection(c, signal, incoming, outgoing)
+
+		// Create a client connection type to manage the new connection and
+		// newSendChan := make(chan Message, 5)
+		// newConn := ClientConnection{c.RemoteAddr().String(), newSendChan}
+		// router.connections = append(router.connections, newConn)
+
+		go handleConnection(c, signal, router)
 
 	}
 }
