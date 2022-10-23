@@ -41,6 +41,10 @@ func main() {
 
 	// Following block of code reads client Stdin, formats it, then sends to the server using Gob.
 	encoder := gob.NewEncoder(c)
+
+	// NOTE FROM JOHN:
+	// THIS FOR-LOOP WORKS TO READ FROM CLIENT'S COMMAND LINE
+	// NEED TO IMPLEMENT GO-ROUTINE TO DECODE INCOMING MESSAGES FROM THE SERVER
 	for {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print(">> ")

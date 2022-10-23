@@ -26,6 +26,7 @@ var serverStatus = "ON"
 // TODO: When EXIT is received, need to communicate via a channel to all the active handleconnection routines.
 // stopChatroom readers user input from Stdin and updates the serverStatus global variable when the EXIT msg is inputted.
 func stopChatroom(ch chan string) {
+
 	for {
 		fmt.Print(">> ")
 		reader := bufio.NewReader(os.Stdin)
@@ -34,6 +35,7 @@ func stopChatroom(ch chan string) {
 			fmt.Println(err)
 			return
 		}
+
 		if strings.TrimSpace(string(text)) == "EXIT" {
 			fmt.Println("Server is shutting down... Press Ctrl + C to exit")
 			serverStatus = "OFF"
@@ -42,13 +44,11 @@ func stopChatroom(ch chan string) {
 	}
 }
 
-// TODO: When the ^^ stopChatroom goroutine receives the EXIT signal:
-//   - Need to somehow communicate to all handleConnections go routines via a channel that the chatroom is exitting,
-//   - Send the EXIT signal to the respective client via TCP.
-func handleConnection(c net.Conn, ch chan string) {
-	// decoder used to recieve messages from the respective client.
+func receiveMessages(c net.Conn, incoming chan Message) {
+
 	dec := gob.NewDecoder(c)
 
+	// Move to incoming routine
 	for {
 		//Read data from connection
 		message := &Message{}
@@ -58,14 +58,51 @@ func handleConnection(c net.Conn, ch chan string) {
 		//
 		if temp == "" {
 			fmt.Print("Client has exited...\n")
-			break
+			c.Close()
 		}
 
-		// For testing purposes only, wont need this later on...
-		// NOTE: message.Content is a slice containing the message values in each index.
-		fmt.Print(">> {To field, From field, content}: " + message.To + " " + message.From + " " + strings.Join(message.Content, " "))
+		incoming <- *message
 	}
-	c.Close()
+
+}
+
+func sendMessages(c net.Conn, outgoing chan Message) {
+
+	enc := gob.NewEncoder(c)
+
+	for {
+		var m = <-outgoing
+
+		// TODO: NOTE FROM JOHN
+		// NEED TO USE MAP TO CHECK IF MESSAGE SHOULD BE SENT TO THIS CLIENT
+		// KEY INTO MAP USING THE USERNAME OF THE MESSAGE AND VERIFY THAT THE CORRESPONDING
+		// PORT VALUE MATCHES THE PORT VALUE OF `c.RemoteAddr()`
+
+		err := enc.Encode(m)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+	}
+}
+
+// TODO: When the ^^ stopChatroom goroutine receives the EXIT signal:
+//   - Need to somehow communicate to all handleConnections go routines via a channel that the chatroom is exitting,
+//   - Send the EXIT signal to the respective client via TCP.
+func handleConnection(c net.Conn, signal chan string, incoming, outgoing chan Message) {
+	// decoder used to recieve messages from the respective client.
+	go receiveMessages(c, incoming)
+
+	go sendMessages(c, outgoing)
+}
+
+func router(incoming, outgoing chan Message) {
+
+	for {
+		var m = <-incoming
+		outgoing <- m
+	}
 }
 
 func main() {
@@ -89,7 +126,11 @@ func main() {
 	// Launch the thread that will read Stdin from user on server side and update serverStatus global variable.
 	// TODO: implement the signal channel and pass to stopChatroom, and somehow use this channel to communication with all handleConnection routines.
 	signal := make(chan string)
+	incoming := make(chan Message, 5)
+	outgoing := make(chan Message, 5)
+
 	go stopChatroom(signal)
+	go router(incoming, outgoing)
 
 	// This block handles incoming connections while serverstatus is ON.
 	// TODO: Ensure that the program terminates when serverStatus is OFF, ie, make sure all handleConnection routines exit.
@@ -102,7 +143,7 @@ func main() {
 		fmt.Println("Server has connected to a new client...")
 
 		// TODO: make sure that these routines exit when signal feeds the "EXIT" string
-		go handleConnection(c, signal)
+		go handleConnection(c, signal, incoming, outgoing)
 
 	}
 }
