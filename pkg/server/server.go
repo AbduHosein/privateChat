@@ -89,6 +89,7 @@ func receiveMessages(router *Router, conn ClientConnection) {
 
 			// ...log the event to os.Stdout...
 			InfoLogger.Printf("%s has left the chat.", string(m.From))
+			fmt.Print(">> ")
 
 			// ...and finally close the connection with the client.
 			conn.c.Close()
@@ -118,18 +119,18 @@ func handleConnection(c net.Conn, router *Router) {
 	newConn := ClientConnection{c, enc, dec}
 
 	// The protocol indicates that a client sends an initialziation
-	// message to the server when it first connects. The content of
-	// this message is the Clients username which other Clients can
-	// use to contact it.
+	// message to the server when it first connects.
+	//
 	// This initialization message is decoded here.
 	var m Message
 	err := dec.Decode(&m)
 	check(err)
 
 	// Initialize a new field in the `router.table` map.
-	username := m.Content
+	username := m.From
 	router.table[username] = newConn
 	InfoLogger.Printf("%s has joined the chat.", username)
+	fmt.Print(">> ")
 
 	// Start loop to receive messages from this client. See
 	// `receiveMessages` for details.
@@ -175,11 +176,13 @@ func (r *Router) dispatchMulti(content string) {
 	}
 }
 
+// Function to be run as a GoRoutine to read user inputs from the command line.
 func readCommandLine(r *Router) {
 
 	for {
 
 		fmt.Print(">> ")
+
 		// Read input from the command line...
 		text, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		check(err)
@@ -199,10 +202,11 @@ func readCommandLine(r *Router) {
 	}
 }
 
+// Run the Chat Room server.
 func Server(port string) {
 
 	// Create a logger to log events on the server with a timestamp.
-	InfoLogger = log.New(os.Stdout, "INFO: ", log.Ltime)
+	InfoLogger = log.New(os.Stdout, "\r \rINFO: ", log.Ltime)
 
 	// Start the server
 	PORT := ":" + port

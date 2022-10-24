@@ -11,32 +11,29 @@ import (
 	"strings"
 )
 
+// Logger  to be used by the client to log messages.
 var MessageLogger *log.Logger
 
-// Message struct to relay to the server
+// Struct to format messages sent in the chat room.
 type Message struct {
-	To      string
-	From    string
+	// Username of the destination client
+	To string
+	// Username of the source client
+	From string
+	// Body of the message
 	Content string
 }
 
-type ArgumentsError struct{}
-
-func (m *ArgumentsError) Error() string {
-	return "Please provide host:port USERNAME"
-}
-
+// Simple error checking function.
 func check(err error) {
 	if err != nil {
-		fmt.Println("ERROR:")
-		fmt.Println(err)
+		fmt.Printf("ERROR: %s\n", err)
 		return
 	}
 }
 
-func receiveMessages(c net.Conn) {
-
-	dec := gob.NewDecoder(c)
+// Function to be run as a GoRoutine
+func receiveMessages(c net.Conn, dec *gob.Decoder) {
 
 	for {
 		var m Message
@@ -57,8 +54,35 @@ func receiveMessages(c net.Conn) {
 
 			}
 		} else {
-			print(err)
+			os.Exit(0)
 		}
+	}
+}
+
+// Function to run as a GoRoutine to catch a SIGINT flag.
+// This allows the client and server to gracefully close their
+// connection if the user hits `Crtl + C` to exit the program.
+func catchSignalInterrupt(c net.Conn, enc *gob.Encoder, username string) {
+
+	// Make a channel of `os.Signal` objects and fill the channel
+	// with instances of SIGINT flags. If the user hits `Crtl + C`,
+	// the `sigs` channel will be filled with an `os.Signal` object.
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt)
+
+	for {
+
+		// If a signal is caught...
+		<-sigs
+
+		// ...send an 'EXIT' message to the Server...
+		m := Message{"SERVER", username, "EXIT"}
+		err := enc.Encode(m)
+		check(err)
+
+		// ...then close the connection and EXIT the program.
+		c.Close()
+		os.Exit(0)
 	}
 }
 
@@ -99,50 +123,50 @@ func readCommandLine(enc *gob.Encoder, username string) {
 
 }
 
-func catchSignalInterrupt(c net.Conn, username string) {
+// Function to run at startup to output basic chatroom details.
+func printChatRoomDetails(address, username string) {
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt)
-
-	for {
-		sig := <-sigs
-
-		enc := gob.NewEncoder(c)
-
-		m := Message{"SERVER", username, "EXIT"}
-		err := enc.Encode(m)
-		check(err)
-
-		fmt.Println(sig.String())
-		c.Close()
-		os.Exit(0)
-	}
+	fmt.Println("----------------------")
+	fmt.Printf("Chatroom Server: %s\nUsername: \t %s\n", address, username)
+	fmt.Println("----------------------")
 }
 
 func Client(address, username string) {
 
+	// Create a logger to log messages on the client with a timestamp.
 	MessageLogger = log.New(os.Stdout, "MESSAGE: ", log.Ltime)
 
-	// Printed this just to see the args
-	fmt.Println("----------------------")
-	fmt.Printf("Chatroom Server: %s\nUsername: \t %s\n", address, username)
-	fmt.Println("----------------------")
+	printChatRoomDetails(address, username)
 
-	// Connect to the server, DIAL is only used once.
+	// Connect to the server. DIAL connection once and then use this
+	// connection instance throughout the program.
 	c, err := net.Dial("tcp", address)
 	check(err)
 
-	go receiveMessages(c)
-	go catchSignalInterrupt(c, username)
-
-	// Following block of code reads client Stdin, formats it, then sends to the server using Gob.
+	// Create encoder and decoder to be used throughout the process.
+	// Use of these encoder and decoder prevents new encoders/decoders
+	// from being created in other areas of the program which read/write
+	// on the same connection.
 	enc := gob.NewEncoder(c)
+	dec := gob.NewDecoder(c)
 
-	// Send an initializing message to the server so that the server can update its router table.
-	m := Message{"SERVER", c.LocalAddr().String(), username}
+	// Start a GoRoutine to receive incoming messages from the server.
+	go receiveMessages(c, dec)
+
+	// Start a GoRoutine to catch a Signal Interupt from the user to gracefully
+	// shutdown the client.
+	go catchSignalInterrupt(c, enc, username)
+
+	// The protocol indicates that a client sends an initialziation
+	// message to the server when it first connects.
+	//
+	// Send the server an initialziation message.
+	m := Message{"SERVER", username, "INIT"}
 	enc.Encode(&m)
 	check(err)
 
+	// Start a loop to read users command line inputs. See `readCommandLine`
+	// for details.
 	readCommandLine(enc, username)
 
 }
