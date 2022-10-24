@@ -1,8 +1,8 @@
-Goal: a simple chat room application that supports only private message
+Goal: a simple chat room application that supports only private messages
 
 # Private Message Server and Client
 
-## <ins>Instructions</ins>
+## Instructions
 1. Clone the privateChat repository to your machine
 2. Open as many terminals as you want clients, and one additional terminal to run the server
 3. Start by running the server, providing a port number for the server
@@ -13,10 +13,10 @@ Goal: a simple chat room application that supports only private message
     - Example 1 `go run main.go CLIENT localhost:8080 lewis`
     - Example 2 `go run main.go CLIENT localhost:8080 john`
 5. To send a message to another client connected to the server, access the command line for a client and input a message in the form {to} {message}. NOTE: {from} will be the connected user by default.
-    - Example `>> lewis Hello Lewis!`
-        - In this example, John sends a message to lewis saying "Hello Lewis!"
+    - Example `>> lewis john Hello Lewis!`
+        - In this example, john sends a message to lewis saying "Hello Lewis!"
         - Lewis will receive a message that displays, 
-            -  `From:    john 
+            -  `From:    john <br>
                 Content: Hello Lewis!`
 6. To shut down the server and all clients, access the <b>server's</b> command line, and input 'EXIT'. Inputting 'EXIT' will close all active TCP connections and shut down the server.
 
@@ -41,12 +41,14 @@ Goal: a simple chat room application that supports only private message
 ## Program Flow
 The entry point to the program is main.go, where users can run either a server or a client by specifying which they would like to run as the first command-line argument. They then provide additional command-line arguments depending on whether they are running a client or a server. 
 
-If SERVER is specified, main.go calls the `Server` function in pkg/server/server.go, which starts by logging the start time of the server and listening for TCP connections on the provided port. It then instantiates a channel for incoming messages from connected clients, and creates the router table which keeps a log of active connections. Then, `Server` starts a thread, `stopChatroom`, which allows for command-line input to exit the server and sever all client connections if the 'EXIT' message is entered. If the 'EXIT' message is recieved, `stopChatroom` calls `dispatchMulti`, which sends the exit signal to all connected clients. Then, `Server` initiates an infinite loop, which accepts incoming TCP connections and calls the `handleConnection(c net.Conn, r Router)` function. 
+If SERVER is specified, main.go calls the `Server` function in pkg/server/server.go, which starts by logging the start time of the server and listening for TCP connections on the provided port. It then instantiates a channel for incoming messages from connected clients, and creates the router table which keeps a log of active connections. Then, `Server` starts a thread, `stopChatroom`, which allows for command-line input to exit the server and sever all client connections if the 'EXIT' message is entered. If the 'EXIT' message is recieved, `stopChatroom` calls `dispatchMulti`, which sends the exit signal to all connected clients. Then, `Server` initiates an infinite loop, which accepts incoming TCP connections and calls the `handleConnection` function.
+
 The `handleconnection` function creates an encoder and decoder for each new ClientConnection, because each encoder and decoder takes the specific net.Conn for each client. The function then takes it's parameters, the newly created encoder and decoder, and creates a new ClientConnection struct. It then creates an empty Message struct, which takes data from the gob decoder. The username that's now in the message struct gets matched ClientConnection variable, they're added to the router table, with the username as the key, and the ClientConnection as the value. Finally, `handleConnection` starts a thread with the `receiveMessages` function.
+
 The `receiveMessages` function reads data from the provided net.Conn, creating a new Message struct when there is command-line input recieved from a client. If the message is intended for the server, for example the instantiation message, or when a client disconnects, it deletes the corresponding client from the router table. If the message is a message from one client to another, `receiveMessages` calls `router.dispatch(*message)`.
 `dispatch` checks if a message is sent to another client that is currently online, by cross referencing the username in the provided message with the list of keys in the Router map of `Username[ClientConnections]`. If the destination client is not online, `dispatch` writes an error message to the command-line of the sending client. If the destination client exists, the function encodes the message with the sending client's gob encoder, and sends it to the recieving client's decoder. 
 
-If running a client, main.go, calls the `Client(address, username)` function in pkg/client/client.go, which logs the connection time of the client and presents information regarding to the command-line parameters the client was started with. It then creates a TCP connection to the server, and sends an initializing message to the server, so the server learns about the client's existence and can add it to the router table. Each client creates two threads, one for receiving messages, `receiveMessages`, and one for catching an EXIT message, `catchSignalInterrupt`. The `Client` function then starts a loop that reads the command line for input, encoding messages and sending them to the server when there is a command-line input. 
+If CLIENT is specified, main.go, calls the `Client(address, username)` function in pkg/client/client.go, which logs the connection time of the client and presents information regarding to the command-line parameters the client was started with. It then creates a TCP connection to the server, and sends an initializing message to the server, so the server learns about the client's existence and can add it to the router table. Each client creates two threads, one for receiving messages, `receiveMessages`, and one for catching an EXIT message, `catchSignalInterrupt`. The `Client` function then starts a loop that reads the command line for input, encoding messages and sending them to the server when there is a command-line input. 
 
 
 ## Design Choices 
@@ -65,7 +67,7 @@ If running a client, main.go, calls the `Client(address, username)` function in 
         - `handleConnection(c net.Conn, signal chan string, router Router)` - For each new client, adds a new ClientConnection struct to the map of ClientConnections in router. Then creates a Message struct, and instantiates the receiveMessages thread with same data as the ClientConnection variable. 
         - `(r Router) dispatch(m Message, c net.Conn)` - Takes a pointer to a Message struct and a net.Conn from the receiveMessages function. The function checks if a message is sent to another client that is currently online, by cross referencing the username in the provided message with the table of usernames within Router map of ClientConnections. 
         - `(r Router) dispatchMulti(content string)` - Loops over all usernames and ClientConnections in the router table, sends a message to all of them, specifically the exit message.
-        - `Server(port string)` - The server is both the controller and the database in the architecture of our program. More specifically, the Router struct is the model, containing all the data and organization necessary for clients to communicate with one another. The functions within server.go control the flow of messages from one client to another, without non-participating clients being aware of any message sent between two participating clients. The `Server(port string)` function is the entry point into server.go, all other functions are subsequent calls from the initialization of the server and the threads it starts. 
+        - `Server(port string)` - The server is both the controller and the database in the architecture of our program. More specifically, the Router struct is the model, containing all the data and organization necessary for clients to communicate with one another. The functions within server.go control the flow of messages from one client to another, without non-participating clients being aware of any message sent between two participating clients. The `Server(port string)` function is the entry point into server.go, all other functions in server.go are subsequent calls from the initialization of the server and the threads it starts. 
 
 - <b>Client</b>
     - <b>Structs</b>
