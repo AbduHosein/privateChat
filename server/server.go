@@ -10,10 +10,6 @@ import (
 	"strings"
 )
 
-// TODO: A MAP that can store all the connected clients. Was thinking something like {USERNAME: netConn}
-// This way when the server recieves a message Struct, we check to see if its in the map, and handle the error if its not.
-// If it is in the MAP, we could now construct a new Struct of the form Message{From, Content string}, ex--> {"Abdu: ", "Hello"}\
-
 var InfoLogger *log.Logger
 
 // Message struct to receive structs from the clients.
@@ -23,6 +19,7 @@ type Message struct {
 	Content string
 }
 
+// Client connection struct that will store info associated with individual clients.
 type ClientConnection struct {
 	// Network address of the Client
 	address string
@@ -32,6 +29,7 @@ type ClientConnection struct {
 	enc gob.Encoder
 }
 
+// Router struct that handles incoming messages, and stores individual clients' ClientConnection structs with their usernames as keys.
 type Router struct {
 	incoming chan Message
 
@@ -39,25 +37,20 @@ type Router struct {
 	table map[string]ClientConnection
 }
 
-// Global variable used to turn the server off
-var serverStatus = "ON"
-
-// TODO: When EXIT is received, need to communicate via a channel to all the active handleconnection routines.
-// stopChatroom readers user input from Stdin and updates the serverStatus global variable when the EXIT msg is inputted.
-func stopChatroom(ch chan string) {
-
+// stopChatroom readers user input from Stdin and sends the EXIT signal to the main process when EXIT is inputted on the server.
+func stopChatroom(signal chan string) {
 	for {
 		fmt.Print(">> ")
 		reader := bufio.NewReader(os.Stdin)
 		text, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Println(err)
+			//fmt.Println(err)
 			return
 		}
 
 		if strings.TrimSpace(string(text)) == "EXIT" {
 			fmt.Println("Server is shutting down... Press Ctrl + C to exit")
-			serverStatus = "OFF"
+			signal <- "EXIT"
 			return
 		}
 	}
@@ -103,13 +96,22 @@ func receiveMessages(c net.Conn, router Router) {
 
 }
 
-// TODO: When the ^^ stopChatroom goroutine receives the EXIT signal:
-//   - Need to somehow communicate to all handleConnections go routines via a channel that the chatroom is exitting,
-//   - Send the EXIT signal to the respective client via TCP.
-func handleConnection(c net.Conn, signal chan string, router Router) {
+func acceptConnections(l net.Listener, ch chan net.Conn) {
+	for {
+		c, err := l.Accept()
+		if err != nil {
+			fmt.Println(err)
+			ch <- nil
+			return
+		}
+		fmt.Println("Server has connected to a new client...")
+		ch <- c
+	}
 
+}
+
+func handleConnection(c net.Conn, router Router) {
 	go receiveMessages(c, router)
-
 }
 
 func (r Router) dispatch(m Message, c net.Conn) {
@@ -125,7 +127,7 @@ func (r Router) dispatch(m Message, c net.Conn) {
 	} else {
 		// Send the client an error message that this user is not online.
 		connection := r.table[m.From]
-		errMsg := Message{From: "ERROR", Content: "The user " + destinationUsername + " is not online.\n"}
+		errMsg := Message{From: "ERROR", Content: "The user \"" + destinationUsername + "\" is not online.\n"}
 		connection.enc.Encode(&errMsg)
 	}
 }
@@ -150,34 +152,39 @@ func main() {
 	}
 	defer l.Close()
 
-	// Launch the thread that will read Stdin from user on server side and update serverStatus global variable.
-	// TODO: implement the signal channel and pass to stopChatroom, and somehow use this channel to communication with all handleConnection routines.
-	signal := make(chan string)
+	// Channels used to communicate between go routines, and the main process.
+	accept := make(chan net.Conn)
+	signal := make(chan string, 1)
 	incoming := make(chan Message, 5)
 
+	// Initializing our router table to handle incoming messages, and store info regarding connected clients.
 	routerTable := make(map[string]ClientConnection)
 	router := Router{incoming, routerTable}
 
+	// Launch thread to read the EXIT message from the user
 	go stopChatroom(signal)
 
-	// This block handles incoming connections while serverstatus is ON.
-	// TODO: Ensure that the program terminates when serverStatus is OFF, ie, make sure all handleConnection routines exit.
-	for serverStatus == "ON" {
-		c, err := l.Accept()
-		if err != nil {
-			fmt.Println(err)
+	// Launch thread to accept new connections and pass them over to the main process.
+	go acceptConnections(l, accept)
+
+	// Implemented a strategy from https://www.rudderstack.com/blog/implementing-graceful-shutdown-in-go/, "Breaking the loop" section, after facing issues
+	// with updating the EXIT signal via a global variable--causing the program to hang (see commit history).
+	// This strategy ensures that we break the loop, or continue the loop based on signal channels rather than static variables.
+	for {
+
+		select {
+		default: // Default case, when a new connection is sent, store it and pass to the handleConnection routine to start the new client.
+			c := <-accept
+			go handleConnection(c, router)
+		case <-signal: // When exit signal is received simply dispatch the exitSignal struct to all connected net.Conn variables from the router table.
+			for key, value := range router.table {
+				// Construct the exit struct.
+				exitSignal := Message{From: "Server", Content: "EXIT"}
+				exitSignal.To = key
+				clientC := value.c
+				router.dispatch(exitSignal, clientC)
+			}
 			return
 		}
-		fmt.Println("Server has connected to a new client...")
-
-		// TODO: make sure that these routines exit when signal feeds the "EXIT" string
-
-		// Create a client connection type to manage the new connection and
-		// newSendChan := make(chan Message, 5)
-		// newConn := ClientConnection{c.RemoteAddr().String(), newSendChan}
-		// router.connections = append(router.connections, newConn)
-
-		go handleConnection(c, signal, router)
-
 	}
 }

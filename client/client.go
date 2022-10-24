@@ -23,7 +23,7 @@ func check(err error) {
 	}
 }
 
-func receiveMessages(c net.Conn) {
+func receiveMessages(c net.Conn, exit chan string) {
 
 	dec := gob.NewDecoder(c)
 
@@ -32,6 +32,11 @@ func receiveMessages(c net.Conn) {
 		err := dec.Decode(&m)
 		check(err)
 		//content := strings.Join(m.Content, " ")
+		if strings.TrimSpace(string(m.Content)) == "EXIT" {
+			exit <- "EXIT"
+			return
+		}
+
 		fmt.Print(m.From + ": " + m.Content + ">> ")
 	}
 }
@@ -59,7 +64,9 @@ func main() {
 		return
 	}
 
-	go receiveMessages(c)
+	exit := make(chan string, 1)
+	next := make(chan string, 1)
+	go receiveMessages(c, exit)
 
 	// Following block of code reads client Stdin, formats it, then sends to the server using Gob.
 	encoder := gob.NewEncoder(c)
@@ -74,37 +81,53 @@ func main() {
 	// NOTE FROM JOHN:
 	// THIS FOR-LOOP WORKS TO READ FROM CLIENT'S COMMAND LINE
 	// NEED TO IMPLEMENT GO-ROUTINE TO DECODE INCOMING MESSAGES FROM THE SERVER
+
 	for {
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Print(">> ")
 
-		// Raw input from server, unformatted at this point
-		text, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println(err)
+		go func() {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print(">> ")
+
+			// Raw input from server, unformatted at this point
+			text, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+
+			// Exit client when the user types STOP.
+			// TODO (STOP GO ROUTINE FROM SERVER): Add another condition here when you recieve STOP from the server.
+			if strings.TrimSpace(string(text)) == "EXIT" {
+				exit <- "EXIT"
+				return
+			}
+
+			// Here the raw text string is split into a slice, so that I can store the slice values in the message struct.
+			send := strings.Split(text, " ")
+
+			// ensure there is more than 2 inputs, ie, the client is sending a message.
+			if len(send) > 2 && send[1] == USERNAME {
+				// Store the message content in a slice, so users can now send longer messages.
+				content := send[2:]
+
+				// Message struct created, and sent to server using encoder.
+				message := &Message{send[0], send[1], strings.Join(content, " ")}
+				encoder.Encode(message)
+			} else {
+				fmt.Println("Invalid arguments, please input: To {Your USERNAME} Message")
+			}
+
+			next <- "Continue"
+
+		}()
+
+		select {
+		case <-next:
+			continue
+		case <-exit:
+			fmt.Print("Client is exitting...")
 			return
-		}
 
-		// Exit client when the user types STOP.
-		// TODO (STOP GO ROUTINE FROM SERVER): Add another condition here when you recieve STOP from the server.
-		if strings.TrimSpace(string(text)) == "EXIT" {
-			fmt.Println("TCP client exiting...")
-			return
-		}
-
-		// Here the raw text string is split into a slice, so that I can store the slice values in the message struct.
-		send := strings.Split(text, " ")
-
-		// ensure there is more than 2 inputs, ie, the client is sending a message.
-		if len(send) > 2 && send[1] == USERNAME {
-			// Store the message content in a slice, so users can now send longer messages.
-			content := send[2:]
-
-			// Message struct created, and sent to server using encoder.
-			message := &Message{send[0], send[1], strings.Join(content, " ")}
-			encoder.Encode(message)
-		} else {
-			fmt.Println("Invalid arguments, please input: To {Your USERNAME} Message")
 		}
 	}
 }
