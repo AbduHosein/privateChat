@@ -13,7 +13,7 @@ import (
 type Message struct {
 	To      string
 	From    string
-	Content []string
+	Content string
 }
 
 func check(err error) {
@@ -31,8 +31,8 @@ func receiveMessages(c net.Conn) {
 		var m Message
 		err := dec.Decode(&m)
 		check(err)
-
-		fmt.Println(m)
+		//content := strings.Join(m.Content, " ")
+		fmt.Print(m.From + ": " + m.Content + ">> ")
 	}
 }
 
@@ -65,7 +65,8 @@ func main() {
 	encoder := gob.NewEncoder(c)
 
 	// INIT-MESSAGE
-	content := strings.Split(USERNAME, " ")
+	//content := strings.Split(USERNAME, " ")
+	content := USERNAME
 	m := Message{"SERVER", c.LocalAddr().String(), content}
 	encoder.Encode(&m)
 	check(err)
@@ -95,15 +96,15 @@ func main() {
 		send := strings.Split(text, " ")
 
 		// ensure there is more than 2 inputs, ie, the client is sending a message.
-		if len(send) > 2 {
+		if len(send) > 2 && send[1] == USERNAME {
 			// Store the message content in a slice, so users can now send longer messages.
 			content := send[2:]
 
 			// Message struct created, and sent to server using encoder.
-			message := &Message{send[0], send[1], content}
+			message := &Message{send[0], send[1], strings.Join(content, " ")}
 			encoder.Encode(message)
 		} else {
-			fmt.Println("Invalid arguments, please input: To From Message")
+			fmt.Println("Invalid arguments, please input: To {Your USERNAME} Message")
 		}
 	}
 }
