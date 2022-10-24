@@ -44,7 +44,7 @@ func receiveMessages(c net.Conn) {
 
 		if err == nil {
 
-			if m.From == "SERVER" {
+			if m.From == "SERVER" && m.Content == "EXIT" {
 
 				c.Close()
 				os.Exit(0)

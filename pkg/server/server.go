@@ -10,131 +10,164 @@ import (
 	"strings"
 )
 
-// TODO: A MAP that can store all the connected clients. Was thinking something like {USERNAME: netConn}
-// This way when the server recieves a message Struct, we check to see if its in the map, and handle the error if its not.
-// If it is in the MAP, we could now construct a new Struct of the form Message{From, Content string}, ex--> {"Abdu: ", "Hello"}\
-
+// Logger variable to be used by the server to log all messages on
+// the server's activity.
 var InfoLogger *log.Logger
 
-// Message struct to receive structs from the clients.
+// Struct to format messages sent in the chat room.
 type Message struct {
-	To      string
-	From    string
+	// Username of the destination client
+	To string
+	// Username of the source client
+	From string
+	// Body of the message
 	Content string
 }
 
+// Struct to contain data for every connection with a client.
+// `enc` & `dec` fields can be used to encode/decode messages
+// over the TCP connection with a client. These fields are stored
+// so that only one encoder and decoder object can be created for
+// each connection with a client, and can then be shared by all
+// GoRoutines running on the server.
 type ClientConnection struct {
-	// Network address of the Client
-	address string
-	// TCP connection between server and client
+	// Network connection with the Client
 	c net.Conn
-	// Encoder which writes to the structs net.Conn
-	enc gob.Encoder
-	// Decoder which reads from the structs net.Conn
-	dec gob.Decoder
+	// Encoder which writes to the newtork connection
+	enc *gob.Encoder
+	// Decoder which reads from the network connection
+	dec *gob.Decoder
 }
 
+// Wrapper struct to hold a map of all the Client's that are currently
+// connected to the chat room. This struct is needed so that it can be
+// used as a receiver:
+//
+//	-dipatch(m Message)
+//	-dispatchMulti(content string)
+//
+// Using the struct as a receiver in prevents prop-drilling from having
+// to pass the map down through subsequent function calls.
 type Router struct {
-	incoming chan Message
-
-	// Maps from a process's username to their ClientConnection address
+	// Maps a Client's username to their ClientConnection struct
 	table map[string]ClientConnection
 }
 
+// Simple error checking function.
 func check(err error) {
 	if err != nil {
-		fmt.Println("ERROR:")
-		fmt.Println(err)
+		fmt.Printf("ERROR: %s\n", err)
 		return
 	}
 }
 
-// TODO: When EXIT is received, need to communicate via a channel to all the active handleconnection routines.
-// stopChatroom readers user input from Stdin and updates the serverStatus global variable when the EXIT msg is inputted.
-
-func receiveMessages(c net.Conn, router Router, enc *gob.Encoder, dec *gob.Decoder) {
+// Function to be ran as a GoRoutine for each Client that connects to
+// the server.
+func receiveMessages(router *Router, conn ClientConnection) {
 
 	for {
-		//Read data from connection
-		message := &Message{}
-		dec.Decode(message)
-		dest := message.To
 
-		// Check if it is a message to be delivered to the server
-		if dest == "SERVER" {
+		// Read a new message from the connecton
+		var m Message
+		conn.dec.Decode(&m)
 
-			if message.Content == "EXIT" {
-
-				// Add in function/lines here to delete the exixting client from the Router struct
-				delete(router.table, message.From)
-
-				InfoLogger.Printf("%s has left the chat.", string(message.From))
-				c.Close()
-				break
-
-			}
-
-			// Skip to next iteration, as this message does not need to be dispatched.
+		// When the call to `conn.dec.Decode(&m)` throws an error, no message
+		// is decoded into the struct, this occurs when a client throws a Signal
+		// Interrupt, and the connection is aborted. In order to catch this case,
+		// this condition checks for a NIL Message and skips to the next iteration
+		// to decode the 'EXIT' message that is sent from a client when it catches
+		// a Signal Interupt.
+		if m.To == "" && m.From == "" && m.Content == "" {
 			continue
-		} else if dest == "" {
-			// Accept empty message that comes when connection is closed
-			continue
+		}
+
+		// If `m` is an 'EXIT' message from a client addressed to a server...
+		if m.To == "SERVER" && m.Content == "EXIT" {
+
+			// ...delete the client connection from the router table...
+			delete(router.table, m.From)
+
+			// ...log the event to os.Stdout...
+			InfoLogger.Printf("%s has left the chat.", string(m.From))
+
+			// ...and finally close the connection with the client.
+			conn.c.Close()
+			return
+
+			// If message is not NULL and is not an 'EXIT' message...
 		} else {
-			// Dispatch the message to the proper client
-			router.dispatch(*message)
+			// ...dispatch the message to the proper client.
+			router.dispatch(m)
 		}
 
 	}
 
 }
 
-// TODO: When the ^^ stopChatroom goroutine receives the EXIT signal:
-//   - Need to somehow communicate to all handleConnections go routines via a channel that the chatroom is exitting,
-//   - Send the EXIT signal to the respective client via TCP.
-func handleConnection(c net.Conn, signal chan string, router Router) {
+// Function to be run as a GoRoutine when a Client connects to the
+// server. `handleConnection` initializes a `ClientConnection` struct
+// and adds the new client to the `router.table` map.
+func handleConnection(c net.Conn, router *Router) {
 
+	// Create Encoders and Decoders to be used across the process.
+	// Creating them at initialization and storing them in the
+	// ClientConnection struct prevents multiple Encoders and Decoders
+	// being created on the same `net.Conn` object.
 	enc := gob.NewEncoder(c)
 	dec := gob.NewDecoder(c)
+	newConn := ClientConnection{c, enc, dec}
 
-	// Add new connection to the router table.
-	newConn := ClientConnection{c.RemoteAddr().String(), c, *enc, *dec}
-
+	// The protocol indicates that a client sends an initialziation
+	// message to the server when it first connects. The content of
+	// this message is the Clients username which other Clients can
+	// use to contact it.
+	// This initialization message is decoded here.
 	var m Message
 	err := dec.Decode(&m)
 	check(err)
 
-	//username := strings.Join(message.Content, "")
+	// Initialize a new field in the `router.table` map.
 	username := m.Content
 	router.table[username] = newConn
-
 	InfoLogger.Printf("%s has joined the chat.", username)
 
-	go receiveMessages(c, router, enc, dec)
+	// Start loop to receive messages from this client. See
+	// `receiveMessages` for details.
+	receiveMessages(router, newConn)
 
 }
 
-func (r Router) dispatch(m Message) {
+// Function to send deliver an incoming message to the proper client.
+func (r *Router) dispatch(m Message) {
 
-	// Username value in the Message.To field
-	destinationUsername := m.To
+	username := m.To
 
-	// Check that this username value is present in the Router table
-	if connection, ok := r.table[destinationUsername]; ok {
-		//connection := r.table[destinationUsername]
-		connection.enc.Encode(&m)
+	// If the username value is present in the Router table...
+	if conn, ok := r.table[username]; ok {
 
+		// ...use the `ClientConnection` to encode the message to the
+		// destintation client.
+		conn.enc.Encode(&m)
+
+		// If the username value is not present in the Router table...
 	} else {
-		// Send the client an error message that this user is not online.
-		connection := r.table[m.From]
-		errMsg := Message{From: "ERROR", Content: "The user " + destinationUsername + " is not online.\n"}
-		connection.enc.Encode(&errMsg)
+
+		// ......use the `ClientConnection` to send the source client
+		// an error message.
+		conn := r.table[m.From]
+		errMsg := Message{To: m.From, From: "SERVER", Content: "The user \"" + username + "\" is not online."}
+		conn.enc.Encode(errMsg)
 	}
 }
 
-func (r Router) dispatchMulti(content string) {
+// Function to deliver messages to all clients in the router table.
+func (r *Router) dispatchMulti(content string) {
 
+	// Loop over every client stored in `router.table`...
 	for user, conn := range r.table {
 
+		// ...for each connection, use the ClientConnections `enc`
+		// field to encode a Message over the network connection.
 		m := Message{user, "SERVER", content}
 		err := conn.enc.Encode(m)
 		check(err)
@@ -142,21 +175,25 @@ func (r Router) dispatchMulti(content string) {
 	}
 }
 
-func stopChatroom(r *Router) {
+func readCommandLine(r *Router) {
 
 	for {
+
 		fmt.Print(">> ")
-		reader := bufio.NewReader(os.Stdin)
-		text, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+		// Read input from the command line...
+		text, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		check(err)
 
+		// ...if user enters "EXIT"...
 		if strings.TrimSpace(string(text)) == "EXIT" {
-			fmt.Println("The chat room is shutting down...")
 
+			// Log the event...
+			InfoLogger.Println("The chat room is shutting down...")
+
+			// ...dispatch an "EXIT" message to all clients on the network...
 			r.dispatchMulti("EXIT")
+
+			// ...and shutdown the server.
 			os.Exit(0)
 		}
 	}
@@ -164,36 +201,34 @@ func stopChatroom(r *Router) {
 
 func Server(port string) {
 
+	// Create a logger to log events on the server with a timestamp.
 	InfoLogger = log.New(os.Stdout, "INFO: ", log.Ltime)
 
-	// Server starts here
-	fmt.Println("Server has started...")
+	// Start the server
 	PORT := ":" + port
 	l, err := net.Listen("tcp4", PORT)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	check(err)
 	defer l.Close()
 
-	// Launch the thread that will read Stdin from user on server side and update serverStatus global variable.
-	// TODO: implement the signal channel and pass to stopChatroom, and somehow use this channel to communication with all handleConnection routines.
-	signal := make(chan string)
-	incoming := make(chan Message, 5)
+	// Log the event.
+	InfoLogger.Println("Server has started...")
 
+	// Create an instance of the router table to be used across all
+	// GoRoutines created by the process.
 	routerTable := make(map[string]ClientConnection)
-	router := Router{incoming, routerTable}
+	router := Router{routerTable}
 
-	go stopChatroom(&router)
+	// Start a GoRoutine to read user inputs from the command line.
+	go readCommandLine(&router)
 
-	// This block handles incoming connections while serverstatus is ON.
-	// TODO: Ensure that the program terminates when serverStatus is OFF, ie, make sure all handleConnection routines exit.
+	// Listen for new client connections...
 	for {
+		// ...when a new client connects...
 		c, err := l.Accept()
 		check(err)
 
-		// Start a go routine to handle the connection with the new client.
-		go handleConnection(c, signal, router)
+		// ...start a GoRoutine to handle the connection with the new client.
+		go handleConnection(c, &router)
 	}
 
 }
