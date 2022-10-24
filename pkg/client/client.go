@@ -28,8 +28,7 @@ func (m *ArgumentsError) Error() string {
 
 func check(err error) {
 	if err != nil {
-		fmt.Println("ERROR:")
-		fmt.Println(err)
+		fmt.Println("ERROR:", err)
 		return
 	}
 }
@@ -57,7 +56,6 @@ func receiveMessages(c net.Conn) {
 
 			}
 		} else {
-			print("Server has closed unexpectedly... ")
 			c.Close()
 			os.Exit(1)
 		}
@@ -71,7 +69,10 @@ func readCommandLine(enc *gob.Encoder, username string) {
 
 		// Reads input from command line, unformatted at this point
 		text, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		check(err)
+		if err != nil {
+			fmt.Println("ERROR:", err)
+			return
+		}
 
 		// Exit client when the user types STOP.
 		if strings.TrimSpace(string(text)) == "EXIT" {
@@ -124,7 +125,6 @@ func Client(address, username string) {
 
 	MessageLogger = log.New(os.Stdout, "MESSAGE: ", log.Ltime)
 
-	// Printed this just to see the args
 	fmt.Println("----------------------")
 	fmt.Printf("Chatroom Server: %s\nUsername: \t %s\n", address, username)
 	fmt.Println("----------------------")

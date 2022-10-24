@@ -10,10 +10,6 @@ import (
 	"strings"
 )
 
-// TODO: A MAP that can store all the connected clients. Was thinking something like {USERNAME: netConn}
-// This way when the server recieves a message Struct, we check to see if its in the map, and handle the error if its not.
-// If it is in the MAP, we could now construct a new Struct of the form Message{From, Content string}, ex--> {"Abdu: ", "Hello"}\
-
 var InfoLogger *log.Logger
 
 // Message struct to receive structs from the clients.
@@ -48,9 +44,6 @@ func check(err error) {
 		return
 	}
 }
-
-// TODO: When EXIT is received, need to communicate via a channel to all the active handleconnection routines.
-// stopChatroom readers user input from Stdin and updates the serverStatus global variable when the EXIT msg is inputted.
 
 func receiveMessages(c net.Conn, router Router, enc *gob.Encoder, dec *gob.Decoder) {
 
@@ -88,9 +81,6 @@ func receiveMessages(c net.Conn, router Router, enc *gob.Encoder, dec *gob.Decod
 
 }
 
-// TODO: When the ^^ stopChatroom goroutine receives the EXIT signal:
-//   - Need to somehow communicate to all handleConnections go routines via a channel that the chatroom is exitting,
-//   - Send the EXIT signal to the respective client via TCP.
 func handleConnection(c net.Conn, router Router) {
 
 	enc := gob.NewEncoder(c)
@@ -175,8 +165,6 @@ func Server(port string) {
 	}
 	defer l.Close()
 
-	// Launch the thread that will read Stdin from user on server side and update serverStatus global variable.
-	// TODO: implement the signal channel and pass to stopChatroom, and somehow use this channel to communication with all handleConnection routines.
 	incoming := make(chan Message, 5)
 
 	routerTable := make(map[string]ClientConnection)
@@ -184,8 +172,7 @@ func Server(port string) {
 
 	go stopChatroom(&router)
 
-	// This block handles incoming connections while serverstatus is ON.
-	// TODO: Ensure that the program terminates when serverStatus is OFF, ie, make sure all handleConnection routines exit.
+	// This block handles incoming connections
 	for {
 		c, err := l.Accept()
 		check(err)
