@@ -34,20 +34,6 @@ func check(err error) {
 	}
 }
 
-// func configure() (string, string, error) {
-
-// 	arguments := os.Args
-// 	if len(arguments) != 3 {
-// 		fmt.Println("Please provide host:port USERNAME")
-// 		return "", "", &ArgumentsError{}
-// 	}
-// 	// Store args in local variables
-// 	port := arguments[1]
-// 	username := arguments[2]
-
-// 	return port, username, nil
-// }
-
 func receiveMessages(c net.Conn) {
 
 	dec := gob.NewDecoder(c)
@@ -57,9 +43,19 @@ func receiveMessages(c net.Conn) {
 		err := dec.Decode(&m)
 
 		if err == nil {
-			fmt.Fprint(os.Stdout, "\r \r")
-			MessageLogger.Printf("\n----------------------\nFrom: \t %s\nContent: %s", m.From, m.Content)
-			fmt.Print(">> ")
+
+			if m.From == "SERVER" {
+
+				c.Close()
+				os.Exit(0)
+
+			} else {
+
+				fmt.Fprint(os.Stdout, "\r \r")
+				MessageLogger.Printf("\n----------------------\nFrom: \t %s\nContent: %s", m.From, m.Content)
+				fmt.Print(">> ")
+
+			}
 		} else {
 			print(err)
 		}
@@ -78,6 +74,9 @@ func readCommandLine(enc *gob.Encoder, username string) {
 		// Exit client when the user types STOP.
 		if strings.TrimSpace(string(text)) == "EXIT" {
 			fmt.Println("TCP client exiting...")
+
+			m := Message{"SERVER", username, "EXIT"}
+			enc.Encode(m)
 			return
 		}
 
@@ -100,7 +99,7 @@ func readCommandLine(enc *gob.Encoder, username string) {
 
 }
 
-func cacthSignalInterrupt(c net.Conn) {
+func catchSignalInterrupt(c net.Conn, username string) {
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt)
@@ -110,7 +109,7 @@ func cacthSignalInterrupt(c net.Conn) {
 
 		enc := gob.NewEncoder(c)
 
-		m := Message{"SERVER", "<USERNAME>", "EXIT"}
+		m := Message{"SERVER", username, "EXIT"}
 		err := enc.Encode(m)
 		check(err)
 
@@ -131,13 +130,10 @@ func Client(address, username string) {
 
 	// Connect to the server, DIAL is only used once.
 	c, err := net.Dial("tcp", address)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	check(err)
 
 	go receiveMessages(c)
-	go cacthSignalInterrupt(c)
+	go catchSignalInterrupt(c, username)
 
 	// Following block of code reads client Stdin, formats it, then sends to the server using Gob.
 	enc := gob.NewEncoder(c)

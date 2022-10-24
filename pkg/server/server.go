@@ -41,9 +41,6 @@ type Router struct {
 	table map[string]ClientConnection
 }
 
-// Global variable used to turn the server off
-var serverStatus = "ON"
-
 func check(err error) {
 	if err != nil {
 		fmt.Println("ERROR:")
@@ -54,24 +51,6 @@ func check(err error) {
 
 // TODO: When EXIT is received, need to communicate via a channel to all the active handleconnection routines.
 // stopChatroom readers user input from Stdin and updates the serverStatus global variable when the EXIT msg is inputted.
-func stopChatroom(ch chan string) {
-
-	for {
-		fmt.Print(">> ")
-		reader := bufio.NewReader(os.Stdin)
-		text, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
-		if strings.TrimSpace(string(text)) == "EXIT" {
-			fmt.Println("Server is shutting down... Press Ctrl + C to exit")
-			serverStatus = "OFF"
-			return
-		}
-	}
-}
 
 func receiveMessages(c net.Conn, router Router, enc *gob.Encoder, dec *gob.Decoder) {
 
@@ -102,7 +81,7 @@ func receiveMessages(c net.Conn, router Router, enc *gob.Encoder, dec *gob.Decod
 			continue
 		} else {
 			// Dispatch the message to the proper client
-			router.dispatch(*message, c)
+			router.dispatch(*message)
 		}
 
 	}
@@ -128,13 +107,13 @@ func handleConnection(c net.Conn, signal chan string, router Router) {
 	username := m.Content
 	router.table[username] = newConn
 
-	InfoLogger.Printf("New Client Added to `Router`: %s under the alias %s", c.RemoteAddr().String(), username)
+	InfoLogger.Printf("%s has joined the chat.", username)
 
 	go receiveMessages(c, router, enc, dec)
 
 }
 
-func (r Router) dispatch(m Message, c net.Conn) {
+func (r Router) dispatch(m Message) {
 
 	// Username value in the Message.To field
 	destinationUsername := m.To
@@ -152,9 +131,40 @@ func (r Router) dispatch(m Message, c net.Conn) {
 	}
 }
 
+func (r Router) dispatchMulti(content string) {
+
+	for user, conn := range r.table {
+
+		m := Message{user, "SERVER", content}
+		err := conn.enc.Encode(m)
+		check(err)
+
+	}
+}
+
+func stopChatroom(r *Router) {
+
+	for {
+		fmt.Print(">> ")
+		reader := bufio.NewReader(os.Stdin)
+		text, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		if strings.TrimSpace(string(text)) == "EXIT" {
+			fmt.Println("The chat room is shutting down...")
+
+			r.dispatchMulti("EXIT")
+			os.Exit(0)
+		}
+	}
+}
+
 func Server(port string) {
 
-	InfoLogger = log.New(os.Stdout, "INFO: ", log.Ltime|log.Lshortfile)
+	InfoLogger = log.New(os.Stdout, "INFO: ", log.Ltime)
 
 	// Server starts here
 	fmt.Println("Server has started...")
@@ -174,26 +184,16 @@ func Server(port string) {
 	routerTable := make(map[string]ClientConnection)
 	router := Router{incoming, routerTable}
 
-	go stopChatroom(signal)
+	go stopChatroom(&router)
 
 	// This block handles incoming connections while serverstatus is ON.
 	// TODO: Ensure that the program terminates when serverStatus is OFF, ie, make sure all handleConnection routines exit.
-	for serverStatus == "ON" {
+	for {
 		c, err := l.Accept()
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		fmt.Println("Server has connected to a new client...")
+		check(err)
 
-		// TODO: make sure that these routines exit when signal feeds the "EXIT" string
-
-		// Create a client connection type to manage the new connection and
-		// newSendChan := make(chan Message, 5)
-		// newConn := ClientConnection{c.RemoteAddr().String(), newSendChan}
-		// router.connections = append(router.connections, newConn)
-
+		// Start a go routine to handle the connection with the new client.
 		go handleConnection(c, signal, router)
-
 	}
+
 }
