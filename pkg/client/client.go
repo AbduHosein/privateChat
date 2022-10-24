@@ -57,7 +57,9 @@ func receiveMessages(c net.Conn) {
 
 			}
 		} else {
-			print(err)
+			print("Server has closed unexpectedly... ")
+			c.Close()
+			os.Exit(1)
 		}
 	}
 }
