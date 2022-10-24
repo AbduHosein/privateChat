@@ -20,7 +20,7 @@ var InfoLogger *log.Logger
 type Message struct {
 	To      string
 	From    string
-	Content []string
+	Content string
 }
 
 type ClientConnection struct {
@@ -74,7 +74,7 @@ func receiveMessages(c net.Conn, router Router) {
 		dec.Decode(message)
 		temp := message.To
 
-		// Check for blank message
+		// Check for blank message,
 		if temp == "" {
 			fmt.Print("Client has exited...\n")
 			c.Close()
@@ -87,7 +87,8 @@ func receiveMessages(c net.Conn, router Router) {
 			enc := gob.NewEncoder(c)
 			newConn := ClientConnection{c.RemoteAddr().String(), c, *enc}
 
-			username := strings.Join(message.Content, "")
+			//username := strings.Join(message.Content, "")
+			username := message.Content
 			router.table[username] = newConn
 
 			InfoLogger.Printf("New Client Added to `Router`: %s under the alias %s", c.RemoteAddr().String(), username)
@@ -97,7 +98,7 @@ func receiveMessages(c net.Conn, router Router) {
 		}
 
 		// Dispatch the message to the proper client
-		router.dispatch(*message)
+		router.dispatch(*message, c)
 	}
 
 }
@@ -111,15 +112,22 @@ func handleConnection(c net.Conn, signal chan string, router Router) {
 
 }
 
-func (r Router) dispatch(m Message) {
+func (r Router) dispatch(m Message, c net.Conn) {
 
 	// Username value in the Message.To field
 	destinationUsername := m.To
 
-	connection := r.table[destinationUsername]
+	// Check that this username value is present in the Router table
+	if connection, ok := r.table[destinationUsername]; ok {
+		//connection := r.table[destinationUsername]
+		connection.enc.Encode(&m)
 
-	connection.enc.Encode(&m)
-
+	} else {
+		// Send the client an error message that this user is not online.
+		connection := r.table[m.From]
+		errMsg := Message{From: "ERROR", Content: "The user " + destinationUsername + " is not online.\n"}
+		connection.enc.Encode(&errMsg)
+	}
 }
 
 func main() {

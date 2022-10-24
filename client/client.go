@@ -16,7 +16,7 @@ var MessageLogger *log.Logger
 type Message struct {
 	To      string
 	From    string
-	Content []string
+	Content string
 }
 
 type ArgumentsError struct{}
@@ -55,15 +55,13 @@ func receiveMessages(c net.Conn) {
 		err := dec.Decode(&m)
 		check(err)
 
-		content := strings.Join(m.Content, " ")
-
 		fmt.Fprint(os.Stdout, "\r \r")
-		MessageLogger.Printf("\n-----------------\nFrom: \t %s\nContent: %s", m.From, content)
+		MessageLogger.Printf("\n-----------------\nFrom: \t %s\nContent: %s", m.From, m.Content)
 		fmt.Print(">> ")
 	}
 }
 
-func readCommandLine(enc *gob.Encoder) {
+func readCommandLine(enc *gob.Encoder, username string) {
 
 	for {
 		fmt.Print(">> ")
@@ -79,19 +77,20 @@ func readCommandLine(enc *gob.Encoder) {
 			return
 		}
 
-		// Here the raw text string is split into a slice, so that I can store the slice values in the message struct.
+		// Here the raw text string is split into a slice, so that I can store the
+		// slice values in the message struct.
 		send := strings.Split(text, " ")
 
 		// ensure there is more than 2 inputs, ie, the client is sending a message.
-		if len(send) > 2 {
+		if len(send) > 2 && send[1] == username {
 			// Store the message content in a slice, so users can now send longer messages.
-			content := send[2:]
+			content := strings.Join(send[2:], " ")
 
 			// Message struct created, and sent to server using enc.
 			message := &Message{send[0], send[1], content}
 			enc.Encode(message)
 		} else {
-			fmt.Println("Invalid arguments, please input: To From Message")
+			fmt.Println("Invalid arguments, please input: To {Your USERNAME} Message")
 		}
 	}
 
@@ -126,11 +125,10 @@ func main() {
 	enc := gob.NewEncoder(c)
 
 	// Send an initializing message to the server so that the server can update its router table.
-	content := strings.Split(USERNAME, " ")
-	m := Message{"SERVER", c.LocalAddr().String(), content}
+	m := Message{"SERVER", c.LocalAddr().String(), USERNAME}
 	enc.Encode(&m)
 	check(err)
 
-	readCommandLine(enc)
+	readCommandLine(enc, USERNAME)
 
 }
