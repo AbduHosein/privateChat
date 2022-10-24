@@ -225,11 +225,13 @@ func Server(port string) {
 	// Start a GoRoutine to read user inputs from the command line.
 	go readCommandLine(&router)
 
+
 	// Listen for new client connections...
 	for {
 		// ...when a new client connects...
 		c, err := l.Accept()
 		check(err)
+
 
 		// ...start a GoRoutine to handle the connection with the new client.
 		go handleConnection(c, &router)

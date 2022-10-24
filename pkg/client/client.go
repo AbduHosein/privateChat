@@ -54,6 +54,7 @@ func receiveMessages(c net.Conn, dec *gob.Decoder) {
 
 			}
 		} else {
+			c.Close()
 			os.Exit(0)
 		}
 	}
@@ -93,7 +94,10 @@ func readCommandLine(enc *gob.Encoder, username string) {
 
 		// Reads input from command line, unformatted at this point
 		text, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		check(err)
+		if err != nil {
+			fmt.Println("ERROR:", err)
+			return
+		}
 
 		// Exit client when the user types STOP.
 		if strings.TrimSpace(string(text)) == "EXIT" {
@@ -117,11 +121,12 @@ func readCommandLine(enc *gob.Encoder, username string) {
 			message := &Message{send[0], username, content}
 			enc.Encode(message)
 		} else {
-			fmt.Println("Invalid arguments, please input: To {Your USERNAME} Message")
+			fmt.Println("Invalid arguments, please input: To Message")
 		}
 	}
 
 }
+
 
 // Function to run at startup to output basic chatroom details.
 func printChatRoomDetails(address, username string) {
@@ -129,6 +134,7 @@ func printChatRoomDetails(address, username string) {
 	fmt.Println("----------------------")
 	fmt.Printf("Chatroom Server: %s\nUsername: \t %s\n", address, username)
 	fmt.Println("----------------------")
+
 }
 
 func Client(address, username string) {
