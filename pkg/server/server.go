@@ -145,7 +145,6 @@ func (r Router) dispatchMulti(content string) {
 func stopChatroom(r *Router) {
 
 	for {
-		fmt.Print(">> ")
 		reader := bufio.NewReader(os.Stdin)
 		text, err := reader.ReadString('\n')
 		if err != nil {

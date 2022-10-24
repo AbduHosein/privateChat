@@ -95,7 +95,7 @@ func readCommandLine(enc *gob.Encoder, username string) {
 			message := &Message{send[0], username, content}
 			enc.Encode(message)
 		} else {
-			fmt.Println("Invalid arguments, please input: To {Your USERNAME} Message")
+			fmt.Println("Invalid arguments, please input: To Message")
 		}
 	}
 
