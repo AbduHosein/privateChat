@@ -17,8 +17,7 @@ Goal: a simple chat room application that supports only private messages
         - In this example, john sends a message to lewis saying "Hello Lewis!"
         - Lewis will receive a message that displays, 
             ```
-            -  From:    john  
-
+                From:    john 
                 Content: Hello Lewis!
             ```
 6. To shut down the server and all clients, access the <b>server's</b> command line, and input 'EXIT'. Inputting 'EXIT' will close all active TCP connections and shut down the server.
