@@ -98,7 +98,7 @@ func receiveMessages(c net.Conn, router Router) {
 		}
 
 		// Dispatch the message to the proper client
-		router.dispatch(*message, c, dec)
+		router.dispatch(*message, c)
 	}
 
 }
@@ -112,7 +112,7 @@ func handleConnection(c net.Conn, signal chan string, router Router) {
 
 }
 
-func (r Router) dispatch(m Message, c net.Conn, dec *gob.Decoder) {
+func (r Router) dispatch(m Message, c net.Conn) {
 
 	// Username value in the Message.To field
 	destinationUsername := m.To
