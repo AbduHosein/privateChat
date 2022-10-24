@@ -105,7 +105,7 @@ func catchSignalInterrupt(c net.Conn, username string) {
 	signal.Notify(sigs, os.Interrupt)
 
 	for {
-		sig := <-sigs
+		<-sigs
 
 		enc := gob.NewEncoder(c)
 
@@ -113,7 +113,6 @@ func catchSignalInterrupt(c net.Conn, username string) {
 		err := enc.Encode(m)
 		check(err)
 
-		fmt.Println(sig.String())
 		c.Close()
 		os.Exit(0)
 	}
