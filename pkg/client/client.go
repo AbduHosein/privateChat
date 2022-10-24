@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"bufio"
@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
 )
 
@@ -27,24 +28,25 @@ func (m *ArgumentsError) Error() string {
 
 func check(err error) {
 	if err != nil {
+		fmt.Println("ERROR:")
 		fmt.Println(err)
 		return
 	}
 }
 
-func configure() (string, string, error) {
+// func configure() (string, string, error) {
 
-	arguments := os.Args
-	if len(arguments) != 3 {
-		fmt.Println("Please provide host:port USERNAME")
-		return "", "", &ArgumentsError{}
-	}
-	// Store args in local variables
-	port := arguments[1]
-	username := arguments[2]
+// 	arguments := os.Args
+// 	if len(arguments) != 3 {
+// 		fmt.Println("Please provide host:port USERNAME")
+// 		return "", "", &ArgumentsError{}
+// 	}
+// 	// Store args in local variables
+// 	port := arguments[1]
+// 	username := arguments[2]
 
-	return port, username, nil
-}
+// 	return port, username, nil
+// }
 
 func receiveMessages(c net.Conn) {
 
@@ -53,11 +55,14 @@ func receiveMessages(c net.Conn) {
 	for {
 		var m Message
 		err := dec.Decode(&m)
-		check(err)
 
-		fmt.Fprint(os.Stdout, "\r \r")
-		MessageLogger.Printf("\n-----------------\nFrom: \t %s\nContent: %s", m.From, m.Content)
-		fmt.Print(">> ")
+		if err == nil {
+			fmt.Fprint(os.Stdout, "\r \r")
+			MessageLogger.Printf("\n----------------------\nFrom: \t %s\nContent: %s", m.From, m.Content)
+			fmt.Print(">> ")
+		} else {
+			print(err)
+		}
 	}
 }
 
@@ -71,7 +76,6 @@ func readCommandLine(enc *gob.Encoder, username string) {
 		check(err)
 
 		// Exit client when the user types STOP.
-		// TODO (STOP GO ROUTINE FROM SERVER): Add another condition here when you recieve STOP from the server.
 		if strings.TrimSpace(string(text)) == "EXIT" {
 			fmt.Println("TCP client exiting...")
 			return
@@ -82,12 +86,12 @@ func readCommandLine(enc *gob.Encoder, username string) {
 		send := strings.Split(text, " ")
 
 		// ensure there is more than 2 inputs, ie, the client is sending a message.
-		if len(send) > 2 && send[1] == username {
+		if len(send) > 1 {
 			// Store the message content in a slice, so users can now send longer messages.
-			content := strings.Join(send[2:], " ")
+			content := strings.Join(send[1:], " ")
 
 			// Message struct created, and sent to server using enc.
-			message := &Message{send[0], send[1], content}
+			message := &Message{send[0], username, content}
 			enc.Encode(message)
 		} else {
 			fmt.Println("Invalid arguments, please input: To {Your USERNAME} Message")
@@ -96,39 +100,53 @@ func readCommandLine(enc *gob.Encoder, username string) {
 
 }
 
-func init() {
+func cacthSignalInterrupt(c net.Conn) {
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt)
+
+	for {
+		sig := <-sigs
+
+		enc := gob.NewEncoder(c)
+
+		m := Message{"SERVER", "<USERNAME>", "EXIT"}
+		err := enc.Encode(m)
+		check(err)
+
+		fmt.Println(sig.String())
+		c.Close()
+		os.Exit(0)
+	}
+}
+
+func Client(address, username string) {
 
 	MessageLogger = log.New(os.Stdout, "MESSAGE: ", log.Ltime)
 
-}
-
-func main() {
-
-	ADDRESS, USERNAME, err := configure()
-	check(err)
-
 	// Printed this just to see the args
 	fmt.Println("----------------------")
-	fmt.Printf("Chatroom Server: %s\nUsername: \t %s\n", ADDRESS, USERNAME)
+	fmt.Printf("Chatroom Server: %s\nUsername: \t %s\n", address, username)
 	fmt.Println("----------------------")
 
 	// Connect to the server, DIAL is only used once.
-	c, err := net.Dial("tcp", ADDRESS)
+	c, err := net.Dial("tcp", address)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
 	go receiveMessages(c)
+	go cacthSignalInterrupt(c)
 
 	// Following block of code reads client Stdin, formats it, then sends to the server using Gob.
 	enc := gob.NewEncoder(c)
 
 	// Send an initializing message to the server so that the server can update its router table.
-	m := Message{"SERVER", c.LocalAddr().String(), USERNAME}
+	m := Message{"SERVER", c.LocalAddr().String(), username}
 	enc.Encode(&m)
 	check(err)
 
-	readCommandLine(enc, USERNAME)
+	readCommandLine(enc, username)
 
 }

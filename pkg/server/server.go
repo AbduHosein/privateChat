@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bufio"
@@ -30,6 +30,8 @@ type ClientConnection struct {
 	c net.Conn
 	// Encoder which writes to the structs net.Conn
 	enc gob.Encoder
+	// Decoder which reads from the structs net.Conn
+	dec gob.Decoder
 }
 
 type Router struct {
@@ -41,6 +43,14 @@ type Router struct {
 
 // Global variable used to turn the server off
 var serverStatus = "ON"
+
+func check(err error) {
+	if err != nil {
+		fmt.Println("ERROR:")
+		fmt.Println(err)
+		return
+	}
+}
 
 // TODO: When EXIT is received, need to communicate via a channel to all the active handleconnection routines.
 // stopChatroom readers user input from Stdin and updates the serverStatus global variable when the EXIT msg is inputted.
@@ -63,42 +73,38 @@ func stopChatroom(ch chan string) {
 	}
 }
 
-func receiveMessages(c net.Conn, router Router) {
+func receiveMessages(c net.Conn, router Router, enc *gob.Encoder, dec *gob.Decoder) {
 
-	dec := gob.NewDecoder(c)
-
-	// Move to incoming routine
 	for {
 		//Read data from connection
 		message := &Message{}
 		dec.Decode(message)
-		temp := message.To
+		dest := message.To
 
-		// Check for blank message,
-		if temp == "" {
-			fmt.Print("Client has exited...\n")
-			c.Close()
-			break
-		}
+		// Check if it is a message to be delivered to the server
+		if dest == "SERVER" {
 
-		// Check if it is a message from the server
-		if temp == "SERVER" {
+			if message.Content == "EXIT" {
 
-			enc := gob.NewEncoder(c)
-			newConn := ClientConnection{c.RemoteAddr().String(), c, *enc}
+				// Add in function/lines here to delete the exixting client from the Router struct
+				delete(router.table, message.From)
 
-			//username := strings.Join(message.Content, "")
-			username := message.Content
-			router.table[username] = newConn
+				InfoLogger.Printf("%s has left the chat.", string(message.From))
+				c.Close()
+				break
 
-			InfoLogger.Printf("New Client Added to `Router`: %s under the alias %s", c.RemoteAddr().String(), username)
+			}
 
 			// Skip to next iteration, as this message does not need to be dispatched.
 			continue
+		} else if dest == "" {
+			// Accept empty message that comes when connection is closed
+			continue
+		} else {
+			// Dispatch the message to the proper client
+			router.dispatch(*message, c)
 		}
 
-		// Dispatch the message to the proper client
-		router.dispatch(*message, c)
 	}
 
 }
@@ -108,7 +114,23 @@ func receiveMessages(c net.Conn, router Router) {
 //   - Send the EXIT signal to the respective client via TCP.
 func handleConnection(c net.Conn, signal chan string, router Router) {
 
-	go receiveMessages(c, router)
+	enc := gob.NewEncoder(c)
+	dec := gob.NewDecoder(c)
+
+	// Add new connection to the router table.
+	newConn := ClientConnection{c.RemoteAddr().String(), c, *enc, *dec}
+
+	var m Message
+	err := dec.Decode(&m)
+	check(err)
+
+	//username := strings.Join(message.Content, "")
+	username := m.Content
+	router.table[username] = newConn
+
+	InfoLogger.Printf("New Client Added to `Router`: %s under the alias %s", c.RemoteAddr().String(), username)
+
+	go receiveMessages(c, router, enc, dec)
 
 }
 
@@ -130,19 +152,13 @@ func (r Router) dispatch(m Message, c net.Conn) {
 	}
 }
 
-func main() {
-	// Handle errors for cmd line arguments
-	arguments := os.Args
-	if len(arguments) == 1 {
-		fmt.Println("Please provide a port number!")
-		return
-	}
+func Server(port string) {
 
 	InfoLogger = log.New(os.Stdout, "INFO: ", log.Ltime|log.Lshortfile)
 
 	// Server starts here
 	fmt.Println("Server has started...")
-	PORT := ":" + arguments[1]
+	PORT := ":" + port
 	l, err := net.Listen("tcp4", PORT)
 	if err != nil {
 		fmt.Println(err)
