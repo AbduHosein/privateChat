@@ -12,11 +12,11 @@ Goal: a simple chat room application that supports only private message
     - `go run main.go CLIENT {host}:{port} {username}`
     - Example 1 `go run main.go CLIENT localhost:8080 lewis`
     - Example 2 `go run main.go CLIENT localhost:8080 john`
-5. To send a message to another client connected to the server, access the command line for a client and input a message in the form {to} {from} {message}
-    - Example `>> lewis john Hello Lewis!`
+5. To send a message to another client connected to the server, access the command line for a client and input a message in the form {to {message}. NOTE: {from} will be the connected user by default.
+    - Example `>> lewis Hello Lewis!`
         - In this example, John sends a message to lewis saying "Hello Lewis!"
         - Lewis will receive a message that displays, 
-            -  `From:    john 
+            -  `From:    john
                 Content: Hello Lewis!`
 6. To shut down the server and all clients, access the <b>server's</b> command line, and input 'EXIT'. Inputting 'EXIT' will close all active TCP connections and shut down the server.
 
