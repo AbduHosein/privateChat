@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"encoding/gob"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strings"
 )
+
+var MessageLogger *log.Logger
 
 // Message struct to relay to the server
 type Message struct {
@@ -16,11 +19,31 @@ type Message struct {
 	Content []string
 }
 
+type ArgumentsError struct{}
+
+func (m *ArgumentsError) Error() string {
+	return "Please provide host:port USERNAME"
+}
+
 func check(err error) {
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+}
+
+func configure() (string, string, error) {
+
+	arguments := os.Args
+	if len(arguments) != 3 {
+		fmt.Println("Please provide host:port USERNAME")
+		return "", "", &ArgumentsError{}
+	}
+	// Store args in local variables
+	port := arguments[1]
+	username := arguments[2]
+
+	return port, username, nil
 }
 
 func receiveMessages(c net.Conn) {
@@ -32,57 +55,22 @@ func receiveMessages(c net.Conn) {
 		err := dec.Decode(&m)
 		check(err)
 
-		fmt.Println(m)
+		content := strings.Join(m.Content, " ")
+
+		fmt.Fprint(os.Stdout, "\r \r")
+		MessageLogger.Printf("\n-----------------\nFrom: \t %s\nContent: %s", m.From, content)
+		fmt.Print(">> ")
 	}
 }
 
-func main() {
-	// Validate that client is supplying correct args.
-	arguments := os.Args
-	if len(arguments) != 3 {
-		fmt.Println("Please provide host:port USERNAME")
-		return
-	}
-	// Store args in local variables
-	CONNECT := arguments[1]
-	USERNAME := arguments[2]
+func readCommandLine(enc *gob.Encoder) {
 
-	// TODO: Potentialy send the username over to server to be a key in our serveside Connections map that will store the various connections.
-
-	// Printed this just to see the args
-	fmt.Println(CONNECT, USERNAME)
-
-	// Connect to the server, DIAL is only used once.
-	c, err := net.Dial("tcp", CONNECT)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	go receiveMessages(c)
-
-	// Following block of code reads client Stdin, formats it, then sends to the server using Gob.
-	encoder := gob.NewEncoder(c)
-
-	// INIT-MESSAGE
-	content := strings.Split(USERNAME, " ")
-	m := Message{"SERVER", c.LocalAddr().String(), content}
-	encoder.Encode(&m)
-	check(err)
-
-	// NOTE FROM JOHN:
-	// THIS FOR-LOOP WORKS TO READ FROM CLIENT'S COMMAND LINE
-	// NEED TO IMPLEMENT GO-ROUTINE TO DECODE INCOMING MESSAGES FROM THE SERVER
 	for {
-		reader := bufio.NewReader(os.Stdin)
 		fmt.Print(">> ")
 
-		// Raw input from server, unformatted at this point
-		text, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+		// Reads input from command line, unformatted at this point
+		text, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		check(err)
 
 		// Exit client when the user types STOP.
 		// TODO (STOP GO ROUTINE FROM SERVER): Add another condition here when you recieve STOP from the server.
@@ -99,11 +87,50 @@ func main() {
 			// Store the message content in a slice, so users can now send longer messages.
 			content := send[2:]
 
-			// Message struct created, and sent to server using encoder.
+			// Message struct created, and sent to server using enc.
 			message := &Message{send[0], send[1], content}
-			encoder.Encode(message)
+			enc.Encode(message)
 		} else {
 			fmt.Println("Invalid arguments, please input: To From Message")
 		}
 	}
+
+}
+
+func init() {
+
+	MessageLogger = log.New(os.Stdout, "MESSAGE: ", log.Ltime)
+
+}
+
+func main() {
+
+	ADDRESS, USERNAME, err := configure()
+	check(err)
+
+	// Printed this just to see the args
+	fmt.Println("----------------------")
+	fmt.Printf("Chatroom Server: %s\nUsername: \t %s\n", ADDRESS, USERNAME)
+	fmt.Println("----------------------")
+
+	// Connect to the server, DIAL is only used once.
+	c, err := net.Dial("tcp", ADDRESS)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	go receiveMessages(c)
+
+	// Following block of code reads client Stdin, formats it, then sends to the server using Gob.
+	enc := gob.NewEncoder(c)
+
+	// Send an initializing message to the server so that the server can update its router table.
+	content := strings.Split(USERNAME, " ")
+	m := Message{"SERVER", c.LocalAddr().String(), content}
+	enc.Encode(&m)
+	check(err)
+
+	readCommandLine(enc)
+
 }

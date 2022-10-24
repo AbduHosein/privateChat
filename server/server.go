@@ -78,6 +78,7 @@ func receiveMessages(c net.Conn, router Router) {
 		if temp == "" {
 			fmt.Print("Client has exited...\n")
 			c.Close()
+			break
 		}
 
 		// Check if it is a message from the server
