@@ -91,7 +91,7 @@ func receiveMessages(c net.Conn, router Router, enc *gob.Encoder, dec *gob.Decod
 // TODO: When the ^^ stopChatroom goroutine receives the EXIT signal:
 //   - Need to somehow communicate to all handleConnections go routines via a channel that the chatroom is exitting,
 //   - Send the EXIT signal to the respective client via TCP.
-func handleConnection(c net.Conn, signal chan string, router Router) {
+func handleConnection(c net.Conn, router Router) {
 
 	enc := gob.NewEncoder(c)
 	dec := gob.NewDecoder(c)
@@ -178,7 +178,6 @@ func Server(port string) {
 
 	// Launch the thread that will read Stdin from user on server side and update serverStatus global variable.
 	// TODO: implement the signal channel and pass to stopChatroom, and somehow use this channel to communication with all handleConnection routines.
-	signal := make(chan string)
 	incoming := make(chan Message, 5)
 
 	routerTable := make(map[string]ClientConnection)
@@ -193,7 +192,7 @@ func Server(port string) {
 		check(err)
 
 		// Start a go routine to handle the connection with the new client.
-		go handleConnection(c, signal, router)
+		go handleConnection(c, router)
 	}
 
 }
