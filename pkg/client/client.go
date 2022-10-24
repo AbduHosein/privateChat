@@ -145,5 +145,6 @@ func Client(address, username string) {
 	check(err)
 
 	readCommandLine(enc, username)
+	defer c.Close()
 
 }
