@@ -32,28 +32,38 @@ func check(err error) {
 	}
 }
 
-// Function to be run as a GoRoutine
+// Function to be run as a GoRoutine to receive messages from the server
 func receiveMessages(c net.Conn, dec *gob.Decoder) {
 
 	for {
+		// Decode the message...
 		var m Message
 		err := dec.Decode(&m)
 
+		// If there is no error...
 		if err == nil {
 
+			// ...check if the message is an EXIT command from the server...
 			if m.From == "SERVER" && m.Content == "EXIT" {
 
+				// ...close the connection and terminate the program if necessary.
 				c.Close()
 				os.Exit(0)
 
+				// Otherwise...
 			} else {
 
+				// ...output the message to Stdout using the Message Logger.
 				fmt.Fprint(os.Stdout, "\r \r")
 				MessageLogger.Printf("\n----------------------\nFrom: \t %s\nContent: %s", m.From, m.Content)
 				fmt.Print(">> ")
 
 			}
+			// If an error occurs, the the server has terminated the connection.
+			// In this case...
 		} else {
+
+			// ...close the connection and terminate the program.
 			c.Close()
 			os.Exit(0)
 		}
@@ -87,6 +97,7 @@ func catchSignalInterrupt(c net.Conn, enc *gob.Encoder, username string) {
 	}
 }
 
+// Function to read use input from the command line.
 func readCommandLine(enc *gob.Encoder, username string) {
 
 	for {
