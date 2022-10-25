@@ -13,7 +13,7 @@ Goal: a simple chat room application that supports only private messages
     - Example 1 `go run main.go CLIENT localhost:8080 lewis`
     - Example 2 `go run main.go CLIENT localhost:8080 john`
 5. To send a message to another client connected to the server, access the command line for a client and input a message in the form {to} {message}. NOTE: {from} will be the connected user by default.
-    - Example `>> lewis john Hello Lewis!`
+    - Example from "john" client `>> lewis Hello Lewis!`
         - In this example, john sends a message to lewis saying "Hello Lewis!"
         - Lewis will receive a message that displays, 
             ```
